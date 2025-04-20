@@ -1,5 +1,6 @@
 # load necessary libraries
 library(shiny)
+library(bslib)
 library(tidyverse)
 library(ggplot2)
 library(quanteda)
@@ -9,6 +10,23 @@ library(DT)
 # read in data
 schools <- read.csv("MA_Colleges.csv")
 lgbtorgs <- read.csv("MA_LGBT_Student_Orgs.csv")
+
+# make table for homepage
+orgTypeTable <- lgbtorgs |> group_by(ClubGenPopn) |> summarize(Organizations = n()) |> 
+  arrange(desc(Organizations)) |> rename(`Club Population` = ClubGenPopn) |> 
+  mutate(`Sub-Populations` = 
+           case_when(`Club Population` == "All LGBT and Allies" ~
+                       "All LGBT, LGBT or ally",
+                     `Club Population` == "Specific Academic Discipline" ~
+                       "STEM, Business, Law, Art",
+                     `Club Population` == "Specific LGBT Identity" ~
+                       "Transgender, asexual, bisexual",
+                     `Club Population` == "LGBT Students of Color" ~
+                       "All POC, Black, Latinx",
+                     `Club Population` == "Specific Non-LGBT Identity" ~
+                       "Athletes, graduate, women",
+                     `Club Population` == "Religious Association" ~
+                       "All religion, Jewish"))
 
 # process data for text analysis
 lgbtorgs_txt <- filter(lgbtorgs, ClubMission != "NA")
@@ -21,8 +39,37 @@ mission_dfm <- dfm(mission_tokens) |> dfm_remove(stopwords('english'))
 ui <- fluidPage(
   titlePanel("LGBT Student Organizations at Colleges and Universities in Massachusetts"),
   tabsetPanel(
-    tabPanel("Overview"),
-    
+    tabPanel("Overview",
+             card("Have you ever wondered what kinds of LGBT student organizations
+                  exist at colleges and universities across Massachusetts? What about
+                  whether a particular college is more or less likely to have at least
+                  one LGBT student organization depending on certain school characteristics?
+                  If so, you're in the right place!\n
+                  This dashboard contains information about 92 higher education 
+                  institutions in Massachusetts which had information about at least one
+                  student organization on their website as of March 2025. Data about the
+                  schools was collected via the Carnegie Classification of Institutions
+                  of Higher Education, Niche, College Board, and the U.S. National Center 
+                  for Education Statistics' College Navigator. Data about the student 
+                  organizations were collected by visiting each school's individual website, 
+                  and thus only contains publicly accessible information.\n
+                  For the main takeaways from this data, check out the information below!
+                  If you'd like to evaluate the relationship between a numeric attribute
+                  of a school and the number of LGBT student organizations schools have,
+                  head over to the 'College Scatterplots' tab. If you're interested in
+                  the relationship between a categorical attribute of a school and the
+                  number of LGBT student organizations schools have, the 'College Boxplots'
+                  will be a good destination! If you're wondering what the LGBT student
+                  organizations have in common in terms of their missions, regardless of
+                  which school they're hosted at, check out the 'Organization Wordcloud'
+                  tab! Lastly, if you want to access the raw data about the schools and/or
+                  the LGBT student organizations to learn more about a specific school or
+                  organization, feel free to peruse the 'College Data' and 'Organization
+                  Data' tabs for the ability to search and filter as you please!\n
+                  Without further ado, here's what you should know about the state of LGBT
+                  student organizations at higher education institutes in Massachusetts!"),
+             tableOutput("orgTypeTable")
+             ),
     
     tabPanel("College Scatterplots",
              selectInput(inputId = "scatplotVar",
@@ -60,11 +107,9 @@ ui <- fluidPage(
              plotOutput("wordcloud")
     ),
     
-    
     tabPanel("College Data",
              dataTableOutput("school_table")
     ),
-    
     
     tabPanel("Organization Data",
              dataTableOutput("org_table")
@@ -74,6 +119,8 @@ ui <- fluidPage(
 
 # define server logic
 server <- function(input, output) {
+  # Overview
+  output$orgTypeTable <- renderTable(orgTypeTable)
   
   # College Scatterplots
   splotvars <- reactive({switch(
