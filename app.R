@@ -1,11 +1,12 @@
 # load necessary libraries
-library(shiny)
-library(bslib)
-library(tidyverse)
-library(ggplot2)
-library(quanteda)
-library(quanteda.textplots)
-library(DT)
+library(shiny)              # for overall app
+library(bslib)              # for certain app functions
+library(tidyverse)          # for data manipulation
+library(ggplot2)            # for scatterplots and boxplots
+library(plotly)             # for interactive graphs
+library(quanteda)           # for text processing
+library(quanteda.textplots) # for wordcloud
+library(DT)                 # for interactive data tables
 
 # read in data
 schools <- read.csv("MA_Colleges.csv")
@@ -28,6 +29,35 @@ orgTypeTable <- lgbtorgs |> group_by(ClubGenPopn) |> summarize(Organizations = n
                      `Club Population` == "Religious Association" ~
                        "All religion, Jewish"))
 
+# modify data for boxplots
+schools <- mutate(schools,
+                  MARegionFac = factor(MARegion, 
+                                       levels = c("West", "Central", "Northeast", "Southeast"),
+                                       ordered = FALSE),
+                  
+                  SettingFac = factor(Setting, levels = c("Rural", "Suburb", "Town",
+                                                          "City: Small", "City: Midsize", 
+                                                          "City: Large"), 
+                                      labels = c("Rural", "Suburb", "Town", "Small City",
+                                                 "Medium City", "Large City"),
+                                      ordered = TRUE),
+                  GraduateFac = factor(Graduate, levels = c("Exclusively undergraduate",
+                                                            "Undergraduate and graduate",
+                                                            "Exclusively graduate"),
+                                       labels = c("All Undergrad", "Undergrad-Grad Mix",
+                                                  "All Grad"), ordered = TRUE),
+                  PublicFac = factor(Public, levels = c(1, 0), 
+                                     labels = c("Public", "Private"), ordered = FALSE),
+                  CommunityFac = factor(Community, levels = c(1, 0),
+                                        labels = c("Community College", "Non-Community College"),
+                                        ordered = FALSE),
+                  ChristianFac = factor(Christian, levels = c(1,0),
+                                        labels = c("Christian", "Not Christian"),
+                                        ordered = FALSE),
+                  HousingFac = factor(Housing, levels = c(1, 0),
+                                      labels = c("Campus Housing", "No Campus Housing"),
+                                      ordered = FALSE))
+
 # process data for text analysis
 lgbtorgs_txt <- filter(lgbtorgs, ClubMission != "NA")
 lgbtorgs_txt$ClubID <- seq(1:nrow(lgbtorgs_txt))
@@ -39,6 +69,7 @@ mission_dfm <- dfm(mission_tokens) |> dfm_remove(stopwords('english'))
 ui <- fluidPage(
   titlePanel("LGBT Student Organizations at Colleges and Universities in Massachusetts"),
   tabsetPanel(
+    # Overview
     tabPanel("Overview",
              card("Have you ever wondered what kinds of LGBT student organizations
                   exist at colleges and universities across Massachusetts? What about
@@ -71,23 +102,24 @@ ui <- fluidPage(
              tableOutput("orgTypeTable")
              ),
     
+    # College Scatterplots
     tabPanel("College Scatterplots",
              selectInput(inputId = "scatplotVar",
-                         label = "Select a numeric variable to plot against the number of 
-                                  LGBT organizations for each school in Massachusetts:",
+                         label = "Select a numeric variable:",
                          choices = list("Number of Students",
                                         "Price of Attendance",
                                         "Percent Male Students",
                                         "Percent White Students",
                                         "Graduation Rate",
                                         "Total Clubs")),
-             plotOutput("scatterplot")
+             plotlyOutput("scatterplot"),
+             textOutput("splotdesc")
     ),
     
+    # College Boxplots
     tabPanel("College Boxplots",
              selectInput(inputId = "boxplotVar",
-                         label = "Select a categorical variable to plot against the number
-                                  of LGBT organizations for each school in Massachusetts:",
+                         label = "Select a categorical variable:",
                          choices = list("Region of MA",
                                         "Campus Setting",
                                         "Student Body Makeup",
@@ -95,22 +127,24 @@ ui <- fluidPage(
                                         "Community or Not",
                                         "Christian or Not",
                                         "Campus Housing or Not")),
-             plotOutput("boxplot")
+             plotOutput("boxplot"),
+             textOutput("bplotdesc")
     ),
     
+    # Organization Wordcloud
     tabPanel("Organization Wordcloud",
              sliderInput(inputId = "minfreq",
-                         label = "Choose the minimum number of times for a word to be 
-                                 included in organization mission statements in order
-                                 for it to show up in the word cloud:",
-                         min = 5, max = 50, value = 50),
+                         label = "Choose a minimum word frequency:",
+                         min = 10, max = 50, value = 30),
              plotOutput("wordcloud")
     ),
     
+    # College Data
     tabPanel("College Data",
              dataTableOutput("school_table")
     ),
     
+    # Organization Data
     tabPanel("Organization Data",
              dataTableOutput("org_table")
     )
@@ -125,31 +159,117 @@ server <- function(input, output) {
   # College Scatterplots
   splotvars <- reactive({switch(
     input$scatplotVar,
-    "Number of Students" = ggplot(data = schools, aes(x = NumStudents, y = LGBTClubs)),
-    "Price of Attendance" = ggplot(data = schools, aes(x = NetPrice, y = LGBTClubs)),
-    "Percent Male Students" = ggplot(data = schools, aes(x = PctMale, y = LGBTClubs)),
-    "Percent White Students" = ggplot(data = schools, aes(x = PctWhite, y = LGBTClubs)),
-    "Graduation Rate" = ggplot(data = schools, aes(x = GradRate, y = LGBTClubs)),
-    "Total Clubs" = ggplot(data = schools, aes(x = TotalClubs, y = LGBTClubs)))
+    "Number of Students" = ggplot(data = schools, aes(x = NumStudents, y = LGBTClubs)) +
+      labs(x = "Number of Students", y = "Number of LGBT Organizations"),
+    "Price of Attendance" = ggplot(data = schools, aes(x = NetPrice, y = LGBTClubs)) +
+      labs(x = "Price of Attendance (USD)", y = "Number of LGBT Organizations"),
+    "Percent Male Students" = ggplot(data = schools, aes(x = PctMen, y = LGBTClubs)) +
+      labs(x = "Percentage of Male Students", y = "Number of LGBT Organizations"),
+    "Percent White Students" = ggplot(data = schools, aes(x = PctWhite, y = LGBTClubs)) +
+      labs(x = "Percentage of White Students", y = "Number of LGBT Organizations"),
+    "Graduation Rate" = ggplot(data = schools, aes(x = GradRate, y = LGBTClubs)) +
+      labs(x = "Graduation Rate (%)", y = "Number of LGBT Organizations"),
+    "Total Clubs" = ggplot(data = schools, aes(x = TotalClubs, y = LGBTClubs)) +
+      labs(x = "Number of Total Clubs", y = "Number of LGBT Organizations"))
   })
-  output$scatterplot <- renderPlot({
-    splotvars() + geom_point()
+  output$scatterplot <- renderPlotly({
+    ggplotly(splotvars() + geom_point(aes(text=Name)) + theme_minimal())
   })
+  splottxt <- reactive({switch(
+    input$scatplotVar,
+    "Number of Students" = "There is a moderately strong positive linear relationship between 
+    the number of students who attend a school and the number of LGBT student organizations
+    there (r = 0.59). Most schools in the dataset have fewer than 20,000 students, with the
+    exception of a few high outliers. The data regarding the number of students at each school
+    was retrieved from the U.S. NCES and are accurate as of 2025.",
+    "Price of Attendance" = "There is no linear relationship between the net price of attendance
+    of a school and the number of LGBT student organizations there (r = 0.04). Knowing how much
+    a school generally costs to attend is not useful in predicting the number of LGBT student
+    organizations that are likely to be there. The data regarding the net price at each school
+    was retrieved from the U.S. NCES and represents the average net price of full-time, entering 
+    undergraduate students who received some form of financial aid in the 2022-2023 school year.",
+    "Percent Male Students" = "There is a very weak negative linear relationship between the
+    percent of male students who attend a school and the number of LGBT student organizations
+    there (r = -0.16). The percentage of students who are reported as male at these schools
+    ranges from 0% (at women's colleges) to 86%, but most schools in the data have a near-even
+    split in gender distribution. The data regarding the percentage of male students at each
+    school was retrieved from NICHE and does not specify the year of collection.",
+    "Percent White Students" = "There is no linear relationship between the percent of white
+    students who attend a school and the number of LGBT student organizations there (r =
+    -0.06). The percentage of students who are reported as white at these schools ranges from
+    4% to 83%, but the middle half of the schools have percentages ranging from 40% to 64%.
+    The data regarding the percentage of white students at each school was retrieved from 
+    College Board and does not specify the year of collection.",
+    "Graduation Rate" = "There is a moderately strong positive linear relationship between
+    the graduation rate of a school and the number of LGBT student organizations there (r = 
+    0.50). All but one of the schools which have at least 2 LGBT student organizations have
+    graduation rates exceeding 50%. The data regarding the graduation rate of each school was
+    retrieved from the U.S. NCES and represents the outcomes for full-time undergraduate 
+    students who began their studies in the fall of 2017 (for most schools) or the fall of 
+    2020 (for some schools).",
+    "Total Clubs" = "There is a strong positive linear relationship between the total number
+    of student organizations at a school and the number of LGBT student organizations there
+    (r = 0.76). This is to be expected, as the more student organizations a school has in 
+    general increases the likelihood of a school having more LGBT student organizations. The
+    data regarding the total number of student organizations at a school was manually
+    collected by visiting each school's website. This information is assumed to be accurate
+    as of 2025, but organizations which are currently inactive may be included as well."
+  )})
+  output$splotdesc <- renderText({splottxt()})
   
   # College Boxplots
   bplotvars <- reactive({switch(
     input$boxplotVar,
-    "Region of MA" = ggplot(data = schools, aes(x = MARegion, y = LGBTClubs)),
-    "Campus Setting" = ggplot(data = schools, aes(x = Setting, y = LGBTClubs)),
-    "Student Body Makeup" = ggplot(data = schools, aes(x = Graduate, y = LGBTClubs)),
-    "Public or Private" = ggplot(data = schools, aes(x = as.factor(Public), y = LGBTClubs)),
-    "Community or Not" = ggplot(data = schools, aes(x = as.factor(Community), y = LGBTClubs)),
-    "Christian or Not" = ggplot(data = schools, aes(x = as.factor(Christian), y = LGBTClubs)),
-    "Campus Housing or Not" = ggplot(data = schools, aes(x = as.factor(Housing), y = LGBTClubs)))
+    "Region of MA" = ggplot(data = schools, aes(x = MARegionFac, y = LGBTClubs)) +
+      labs(x = "Region of Massachusetts", y = "Number of LGBT Organizations"),
+    "Campus Setting" = ggplot(data = schools, aes(x = SettingFac, y = LGBTClubs)) +
+      labs(x = "Campus Setting", y = "Number of LGBT Organizations"),
+    "Student Body Makeup" = ggplot(data = schools, aes(x = GraduateFac, y = LGBTClubs)) +
+      labs(x = "Student Body Makeup", y = "Number of LGBT Organizations"),
+    "Public or Private" = ggplot(data = schools, aes(x = PublicFac, y = LGBTClubs)) +
+      labs(x = "Publicity Status", y = "Number of LGBT Organizations"),
+    "Community or Not" = ggplot(data = schools, aes(x = CommunityFac, y = LGBTClubs)) +
+      labs(x = "Community College Status", y = "Number of LGBT Organizations"),
+    "Christian or Not" = ggplot(data = schools, aes(x = ChristianFac, y = LGBTClubs)) +
+      labs(x = "Religion Status", y = "Number of LGBT Organizations"),
+    "Campus Housing or Not" = ggplot(data = schools, aes(x = HousingFac, y = LGBTClubs)) +
+      labs(x = "Campus Housing Status", y = "Number of LGBT Organizations"))
   })
   output$boxplot <- renderPlot({
-    bplotvars() + geom_boxplot()
+    bplotvars() + geom_boxplot() + theme_minimal()
   })
+  bplottxt <- reactive({switch(
+    input$boxplotVar,
+    "Region of MA" = "There are 17 schools in Western MA, 11 schools in Central MA, 46 schools
+    in Northeastern MA, and 18 schools in Southeastern MA. While all regions share the same
+    median number of LGBT student organizations (1 organization), the West and Central MA
+    regions tend to have more schools with more than 1 LGBT student organization.",
+    "Campus Setting" = "There are 5 schools in a rural setting, 35 schools in a suburban
+    setting, 3 schools in a town, 10 schools in a small city, 16 schools in a medium-sized
+    city, and 23 schools in a large city. Schools in every setting except for small cities
+    have a median of 1 LGBT student organization. Schools located in a small city are more
+    likely to have more than 1 LGBT student organization.",
+    "Student Body Makeup" = "There are 27 schools with exclusively undergraduate students,
+    60 schools with both undergraduate and graduate students, and only 5 schools with 
+    exclusively graduate students. Regardless of the student body makeup, the median number
+    of LGBT student organizations is 1. However, schools with some undergraduate students
+    and some graduate students are more likely to have more than 1 LGBT student organization.",
+    "Public or Private" = "There are 29 public schools and 63 private schools. Both types of
+    school have a median of 1 LGBT student organization, but private schools are more likely
+    to have more than 1 LGBT student organization.",
+    "Community or Not" = "There are 15 community colleges and 77 non-community colleges.
+    Both types of school have a median of 1 LGBT student organization, but non-community
+    colleges are more likely to have more than 1 LGBT student organization.",
+    "Christian or Not" = "There are 15 Christian colleges and 77 non-Christian colleges.
+    Both types of school have a median of 1 LGBT student organization, but non-Christian
+    colleges are much more likely to have more than 1 LGBT student organization.",
+    "Campus Housing or Not" = "There are 65 schools which offer on-campus housing and 27
+    schools which do not offer on-campus housing. Both types of school have a median of 1
+    LGBT student organization, but schools which offer campus housing are more likely to
+    have more than 1 LGBT student organization."
+    )})
+  output$bplotdesc <- renderText({bplottxt()})
+  
   
   # Organization Wordcloud
   cloud_dfm <- reactive({dfm_trim(mission_dfm, min_termfreq = input$minfreq, verbose = FALSE)})
