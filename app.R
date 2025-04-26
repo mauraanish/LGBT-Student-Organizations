@@ -2,6 +2,7 @@
 library(shiny)              # for overall app
 library(bslib)              # for certain app functions
 library(tidyverse)          # for data manipulation
+library(sf)                 # for map
 library(ggplot2)            # for scatterplots and boxplots
 library(plotly)             # for interactive graphs
 library(quanteda)           # for text processing
@@ -28,6 +29,10 @@ orgTypeTable <- lgbtorgs |> group_by(ClubGenPopn) |> summarize(Organizations = n
                        "Athletes, graduate, women",
                      `Club Population` == "Religious Association" ~
                        "All religion, Jewish"))
+
+# prepare to make map
+ma_sf <- read_sf("countyShapes/COUNTIES_POLY.shp")
+county_groups <- schools |> group_by(County) |> mutate(County = toupper(County))
 
 # modify data for boxplots
 schools <- mutate(schools,
@@ -71,23 +76,26 @@ ui <- fluidPage(
   tabsetPanel(
     # Overview
     tabPanel("Overview",
-             card("Have you ever wondered what kinds of LGBT student organizations
+             card(p("Have you ever wondered what kinds of LGBT student organizations
                   exist at colleges and universities across Massachusetts? What about
                   whether a particular college is more or less likely to have at least
                   one LGBT student organization depending on certain school characteristics?
-                  If so, you're in the right place!\n
-                  This dashboard contains information about 92 higher education 
+                  If so, you're in the right place!"),
+                  p("This dashboard contains information about 92 higher education 
                   institutions in Massachusetts which had information about at least one
                   student organization on their website as of March 2025. Data about the
                   schools was collected via the Carnegie Classification of Institutions
                   of Higher Education, Niche, College Board, and the U.S. National Center 
                   for Education Statistics' College Navigator. Data about the student 
                   organizations were collected by visiting each school's individual website, 
-                  and thus only contains publicly accessible information.\n
-                  For the main takeaways from this data, check out the information below!
-                  If you'd like to evaluate the relationship between a numeric attribute
-                  of a school and the number of LGBT student organizations schools have,
-                  head over to the 'College Scatterplots' tab. If you're interested in
+                  and thus only contains publicly accessible information."),
+                  p("For the main takeaways from this data, check out the information below!
+                  If you're curious about how the number of LGBT student organizations per
+                  school is related to the Massachusetts county the school is in, check out
+                  the 'Map' tab for a visual representation of different metrics across the.
+                  state. If you'd like to evaluate the relationship between a numeric 
+                  attribute of a school and the number of LGBT student organizations schools 
+                  have, head over to the 'College Scatterplots' tab. If you're interested in
                   the relationship between a categorical attribute of a school and the
                   number of LGBT student organizations schools have, the 'College Boxplots'
                   will be a good destination! If you're wondering what the LGBT student
@@ -96,11 +104,20 @@ ui <- fluidPage(
                   tab! Lastly, if you want to access the raw data about the schools and/or
                   the LGBT student organizations to learn more about a specific school or
                   organization, feel free to peruse the 'College Data' and 'Organization
-                  Data' tabs for the ability to search and filter as you please!\n
-                  Without further ado, here's what you should know about the state of LGBT
-                  student organizations at higher education institutes in Massachusetts!"),
+                  Data' tabs for the ability to search and filter as you please!"),
+                  p("Without further ado, here's what you should know about the state of LGBT
+                  student organizations at higher education institutes in Massachusetts!")),
              tableOutput("orgTypeTable")
              ),
+
+    # Map of MA
+    tabPanel("Map",
+             selectInput(inputId = "mapvar",
+                         label = "Select a measure to display:",
+                         choices = list("Minimum", "Median", "Mean", "Maximum", "Sum")),
+             plotlyOutput("map"),
+             textOutput("mapdesc")
+    ),
     
     # College Scatterplots
     tabPanel("College Scatterplots",
@@ -155,6 +172,56 @@ ui <- fluidPage(
 server <- function(input, output) {
   # Overview
   output$orgTypeTable <- renderTable(orgTypeTable)
+
+  # Map
+  county_summary <- reactive({switch(
+    input$mapvar,
+    "Minimum" = county_groups |> summarize(NumSchools = n(), MinClubs = min(LGBTClubs)),
+    "Median" = county_groups |> summarize(NumSchools = n(), MedClubs = median(LGBTClubs)),
+    "Mean" = county_groups |> summarize(NumSchools = n(), AvgClubs = mean(LGBTClubs)),
+    "Maximum" = county_groups |> summarize(NumSchools = n(), MaxClubs = max(LGBTClubs)),
+    "Sum" = county_groups |> summarize(NumSchools = n(), TotClubs = sum(LGBTClubs))
+  )})
+  basemap <- reactive({switch(
+    input$mapvar,
+    "Minimum" = ggplot(left_join(ma_sf, county_summary(), by = c("COUNTY" = "County")),
+                       aes(text = paste("County: ", COUNTY, "\nSchools: ", NumSchools))) + 
+                geom_sf(aes(fill = MinClubs)),
+    "Median" = ggplot(left_join(ma_sf, county_summary(), by = c("COUNTY" = "County")),
+                      aes(text = paste("County: ", COUNTY, "\nSchools: ", NumSchools))) + 
+               geom_sf(aes(fill = MedClubs)),
+    "Mean" = ggplot(left_join(ma_sf, county_summary(), by = c("COUNTY" = "County")),
+                    aes(text = paste("County: ", COUNTY, "\nSchools: ", NumSchools))) + 
+             geom_sf(aes(fill = AvgClubs)),
+    "Maximum" = ggplot(left_join(ma_sf, county_summary(), by = c("COUNTY" = "County")),
+                       aes(text = paste("County: ", COUNTY, "\nSchools: ", NumSchools))) + 
+                geom_sf(aes(fill = MaxClubs)),
+    "Sum" = ggplot(left_join(ma_sf, county_summary(), by = c("COUNTY" = "County")),
+                   aes(text = paste("County: ", COUNTY, "\nSchools: ", NumSchools))) + 
+            geom_sf(aes(fill = TotClubs)),
+  )})
+  output$map <- renderPlotly(ggplotly(basemap() + theme_void()))
+  maptxt <- reactive({switch(
+    input$mapvar,
+    "Minimum" = "Every school located in Hampshire County has at least 2 LGBT student
+    organizations. All of the schools located in Western or Central Massachusetts have
+    at least 1 LGBT student organization. There are some schools in Northeastern MA
+    which have 0 LGBT student organizations.",
+    "Median" = "The schools in Hampshire County and Plymouth County have a median of
+    3 LGBT student organizations. Besides these two and Bristol County, the rest of
+    the counties in Massachusetts have a median of 1 LGBT student organization for all
+    of the schools located there.",
+    "Mean" = "The average number of LGBT student organizations varies widely across each
+    county. Hampshire County and Plymouth County have the highest average numbers of 
+    LGBT student organizations in the state, while Essex County and Barnstable County
+    have the lowest averages.",
+    "Maximum" = "Suffolk County and Middlesex County are the homes of the schools which
+    have the highest maximum numbers of LGBT student organizations. All of the schools 
+    in Essex County have at most 1 LGBT student organization.",
+    "Sum" = "In total, Suffolk County has the most LGBT student organizations. Franklin
+    County and Essex County have the lowest total numbers of LGBT student organizations."
+  )})
+  output$mapdesc <- renderText({maptxt()})
   
   # College Scatterplots
   splotvars <- reactive({switch(
