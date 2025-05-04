@@ -121,7 +121,42 @@ ui <- fluidPage(
                   Data' tabs for the ability to search and filter as you please!"),
                   p("Without further ado, here's what you should know about the state of LGBT
                   student organizations at higher education institutes in Massachusetts!")),
-             tableOutput("orgTypeTable")
+             layout_columns(
+               value_box(title = "Total LGBT Student Organizations",
+                         "132", 
+                         "Across 92 schools in MA",
+                         theme = "bg-gradient-indigo-purple"),
+               value_box(title = "Schools with 0 LGBT Student Organizations",
+                         "14", "15% of the 92 schools in MA have none",
+                         theme = "bg-gradient-indigo-purple"),
+               value_box(title = "Average LGBT Student Organizations",
+                         "1.43",
+                         "Across 92 schools in MA",
+                         theme = "bg-gradient-indigo-purple")
+             ),
+             layout_columns(
+               card(card_header("Traits of Schools with More LGBT Student Organizations"),
+                    p("1. More Total Clubs: Schools with more student clubs in general tend to have 
+                      more LGBT student clubs."),
+                    p("2. More Students: Schools with more students tend to have more LGBT student 
+                      clubs."),
+                    p("3. Higher Graduation Rates: Schools where more full-time undergraduate 
+                      students graduate tend to have more LGBT student clubs."),
+                    p("Note: According to multiple linear regression models, when also controlling for: 
+                       school being public or private, 
+                       school being community college or not,
+                       school location in MA, 
+                       campus setting, 
+                       presence of graduate students, 
+                       average net price,
+                       school being Christian or not,
+                       percent of male students,
+                       percent of white students, and
+                       school having on-campus housing or not")),
+               card(card_header("Types of LGBT Student Organizations"), 
+                    tableOutput("orgTypeTable"))
+             ),
+             card(p("Dashboard created by Maura Anish in May 2025. Contact at: mbanish@umass.edu."))
     ),
     
     # Map of MA
@@ -196,7 +231,7 @@ server <- function(input, output) {
     input$mapvar,
     "Minimum" = county_groups |> summarize(NumSchools = n(), MinClubs = min(LGBTClubs)),
     "Median" = county_groups |> summarize(NumSchools = n(), MedClubs = median(LGBTClubs)),
-    "Mean" = county_groups |> summarize(NumSchools = n(), AvgClubs = mean(LGBTClubs)),
+    "Mean" = county_groups |> summarize(NumSchools = n(), AvgClubs = round(mean(LGBTClubs), 2)),
     "Maximum" = county_groups |> summarize(NumSchools = n(), MaxClubs = max(LGBTClubs)),
     "Sum" = county_groups |> summarize(NumSchools = n(), TotClubs = sum(LGBTClubs))
   )})
