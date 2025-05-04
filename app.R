@@ -1,3 +1,4 @@
+# -- SET UP -- #
 # load necessary libraries
 library(shiny)              # for overall app
 library(bslib)              # for certain app functions
@@ -34,6 +35,16 @@ orgTypeTable <- lgbtorgs |> group_by(ClubGenPopn) |> summarize(Organizations = n
 ma_sf <- read_sf("countyShapes/COUNTIES_POLY.shp")
 county_groups <- schools |> group_by(County) |> mutate(County = toupper(County))
 
+# modify data for scatterplots
+schools <- mutate(schools,
+                  NumStudents = as.numeric(NumStudents),
+                  NetPrice = as.numeric(NetPrice),
+                  PctMen = as.numeric(PctMen),
+                  PctWhite = as.numeric(PctWhite),
+                  GradRate = as.numeric(GradRate),
+                  TotalClubs = as.numeric(TotalClubs),
+                  LGBTClubs = as.numeric(LGBTClubs))
+
 # modify data for boxplots
 schools <- mutate(schools,
                   MARegionFac = factor(MARegion, 
@@ -68,10 +79,13 @@ lgbtorgs_txt <- filter(lgbtorgs, ClubMission != "NA")
 lgbtorgs_txt$ClubID <- seq(1:nrow(lgbtorgs_txt))
 mission_corpus <- corpus(lgbtorgs_txt, docid_field = "ClubID", text_field = "ClubMission")
 mission_tokens <- tokens(mission_corpus, remove_punct = T, remove_numbers = T)
-mission_dfm <- dfm(mission_tokens) |> dfm_remove(stopwords('english'))
+mission_dfm <- dfm(mission_tokens) |> dfm_remove(c(stopwords('english'), "+"))
 
+
+# -- BUILD APP -- #
 # define UI
 ui <- fluidPage(
+  theme = bs_theme(bootswatch = "pulse"),
   titlePanel("LGBT Student Organizations at Colleges and Universities in Massachusetts"),
   tabsetPanel(
     # Overview
@@ -84,11 +98,11 @@ ui <- fluidPage(
                   p("This dashboard contains information about 92 higher education 
                   institutions in Massachusetts which had information about at least one
                   student organization on their website as of March 2025. Data about the
-                  schools was collected via the Carnegie Classification of Institutions
-                  of Higher Education, Niche, College Board, and the U.S. National Center 
-                  for Education Statistics' College Navigator. Data about the student 
-                  organizations were collected by visiting each school's individual website, 
-                  and thus only contains publicly accessible information."),
+                  schools was collected via the American Council on Education's (ACE) Carnegie 
+                  Classification of Institutions of Higher Education, Niche, College Board, 
+                  and the U.S. National Center for Education Statistics (NCES) College Navigator. 
+                  Data about the student organizations were collected by visiting each school's 
+                  individual website, and thus only contains publicly accessible information."),
                   p("For the main takeaways from this data, check out the information below!
                   If you're curious about how the number of LGBT student organizations per
                   school is related to the Massachusetts county the school is in, check out
@@ -108,10 +122,10 @@ ui <- fluidPage(
                   p("Without further ado, here's what you should know about the state of LGBT
                   student organizations at higher education institutes in Massachusetts!")),
              tableOutput("orgTypeTable")
-             ),
-
+    ),
+    
     # Map of MA
-    tabPanel("Map",
+    tabPanel("Massachusetts Map",
              selectInput(inputId = "mapvar",
                          label = "Select a measure to display:",
                          choices = list("Minimum", "Median", "Mean", "Maximum", "Sum")),
@@ -153,7 +167,11 @@ ui <- fluidPage(
              sliderInput(inputId = "minfreq",
                          label = "Choose a minimum word frequency:",
                          min = 10, max = 50, value = 30),
-             plotOutput("wordcloud")
+             plotOutput("wordcloud"),
+             card(p("These words were present in multiple LGBT student organizations' mission
+                    statements. 121 out of the 132 LGBT student organizations had their mission
+                    statements available online; the statements were retrieved from the 
+                    individual schools' websites and are accurate as of 2025."))
     ),
     
     # College Data
@@ -172,7 +190,7 @@ ui <- fluidPage(
 server <- function(input, output) {
   # Overview
   output$orgTypeTable <- renderTable(orgTypeTable)
-
+  
   # Map
   county_summary <- reactive({switch(
     input$mapvar,
@@ -200,26 +218,27 @@ server <- function(input, output) {
                    aes(text = paste("County: ", COUNTY, "\nSchools: ", NumSchools))) + 
             geom_sf(aes(fill = TotClubs)),
   )})
-  output$map <- renderPlotly(ggplotly(basemap() + theme_void()))
+  output$map <- renderPlotly(ggplotly(basemap() + 
+                                      scale_fill_distiller(palette = "Purples", direction = 1) + 
+                                      theme_void()))
   maptxt <- reactive({switch(
     input$mapvar,
     "Minimum" = "Every school located in Hampshire County has at least 2 LGBT student
     organizations. All of the schools located in Western or Central Massachusetts have
-    at least 1 LGBT student organization. There are some schools in Northeastern MA
-    which have 0 LGBT student organizations.",
-    "Median" = "The schools in Hampshire County and Plymouth County have a median of
-    3 LGBT student organizations. Besides these two and Bristol County, the rest of
-    the counties in Massachusetts have a median of 1 LGBT student organization for all
-    of the schools located there.",
+    at least 1 LGBT student organization. There are some schools in Northeastern MA and
+    Southeastern MA which have 0 LGBT student organizations.",
+    "Median" = "The schools in Hampshire County and Plymouth County have the highest median
+    number of LGBT student organizations. Most other counties in Massachusetts have a median 
+    of 1 LGBT student organization.",
     "Mean" = "The average number of LGBT student organizations varies widely across each
     county. Hampshire County and Plymouth County have the highest average numbers of 
     LGBT student organizations in the state, while Essex County and Barnstable County
     have the lowest averages.",
     "Maximum" = "Suffolk County and Middlesex County are the homes of the schools which
-    have the highest maximum numbers of LGBT student organizations. All of the schools 
-    in Essex County have at most 1 LGBT student organization.",
-    "Sum" = "In total, Suffolk County has the most LGBT student organizations. Franklin
-    County and Essex County have the lowest total numbers of LGBT student organizations."
+    have the highest numbers of LGBT student organizations. All of the schools in Barnstable, 
+    Essex, Franklin, and Hampden Counties have at most 1 LGBT student organization.",
+    "Sum" = "In total, Suffolk County has the most LGBT student organizations. Barnstable
+    County and Franklin County only have a total of 1 LGBT student organization each."
   )})
   output$mapdesc <- renderText({maptxt()})
   
@@ -240,7 +259,8 @@ server <- function(input, output) {
       labs(x = "Number of Total Clubs", y = "Number of LGBT Organizations"))
   })
   output$scatterplot <- renderPlotly({
-    ggplotly(splotvars() + geom_point(aes(text=Name)) + theme_minimal())
+    ggplotly(splotvars() + geom_smooth(method = "lm", color = "purple") + 
+               geom_point(aes(text = Name)) + theme_minimal())
   })
   splottxt <- reactive({switch(
     input$scatplotVar,
@@ -248,12 +268,12 @@ server <- function(input, output) {
     the number of students who attend a school and the number of LGBT student organizations
     there (r = 0.59). Most schools in the dataset have fewer than 20,000 students, with the
     exception of a few high outliers. The data regarding the number of students at each school
-    was retrieved from the U.S. NCES and are accurate as of 2025.",
+    was retrieved from the U.S. NCES and is accurate as of 2025.",
     "Price of Attendance" = "There is no linear relationship between the net price of attendance
     of a school and the number of LGBT student organizations there (r = 0.04). Knowing how much
     a school generally costs to attend is not useful in predicting the number of LGBT student
     organizations that are likely to be there. The data regarding the net price at each school
-    was retrieved from the U.S. NCES and represents the average net price of full-time, entering 
+    was retrieved from the U.S. NCES and represents the average net price for full-time, entering 
     undergraduate students who received some form of financial aid in the 2022-2023 school year.",
     "Percent Male Students" = "There is a very weak negative linear relationship between the
     percent of male students who attend a school and the number of LGBT student organizations
@@ -315,12 +335,15 @@ server <- function(input, output) {
     setting, 3 schools in a town, 10 schools in a small city, 16 schools in a medium-sized
     city, and 23 schools in a large city. Schools in every setting except for small cities
     have a median of 1 LGBT student organization. Schools located in a small city are more
-    likely to have more than 1 LGBT student organization.",
+    likely to have more than 1 LGBT student organization. The data regarding the setting of
+    each school was retrieved from the U.S. NCES and is accurate as of 2025.",
     "Student Body Makeup" = "There are 27 schools with exclusively undergraduate students,
     60 schools with both undergraduate and graduate students, and only 5 schools with 
     exclusively graduate students. Regardless of the student body makeup, the median number
     of LGBT student organizations is 1. However, schools with some undergraduate students
-    and some graduate students are more likely to have more than 1 LGBT student organization.",
+    and some graduate students are more likely to have more than 1 LGBT student organization.
+    The data regarding the student body makeup of each school was retrieved from the ACE and 
+    is accurate as of 2025.",
     "Public or Private" = "There are 29 public schools and 63 private schools. Both types of
     school have a median of 1 LGBT student organization, but private schools are more likely
     to have more than 1 LGBT student organization.",
@@ -329,11 +352,14 @@ server <- function(input, output) {
     colleges are more likely to have more than 1 LGBT student organization.",
     "Christian or Not" = "There are 15 Christian colleges and 77 non-Christian colleges.
     Both types of school have a median of 1 LGBT student organization, but non-Christian
-    colleges are much more likely to have more than 1 LGBT student organization.",
+    colleges are much more likely to have more than 1 LGBT student organization. The data
+    regarding whether a school is Christian or not was retrieved from NICHE and does not
+    specify the year of collection.",
     "Campus Housing or Not" = "There are 65 schools which offer on-campus housing and 27
     schools which do not offer on-campus housing. Both types of school have a median of 1
     LGBT student organization, but schools which offer campus housing are more likely to
-    have more than 1 LGBT student organization."
+    have more than 1 LGBT student organization. The data regarding whether a school has
+    on-campus housing or not was retrieved from the U.S. NCES and is accurate as of 2025."
     )})
   output$bplotdesc <- renderText({bplottxt()})
   
@@ -341,7 +367,7 @@ server <- function(input, output) {
   # Organization Wordcloud
   cloud_dfm <- reactive({dfm_trim(mission_dfm, min_termfreq = input$minfreq, verbose = FALSE)})
   output$wordcloud <- renderPlot({
-    textplot_wordcloud(cloud_dfm(), color="black")
+    textplot_wordcloud(cloud_dfm(), color="black", min_size = .5, max_size = 8)
   })
   
   # College Data
