@@ -45,6 +45,16 @@ schools <- mutate(schools,
                   TotalClubs = as.numeric(TotalClubs),
                   LGBTClubs = as.numeric(LGBTClubs))
 
+# calculate correlations for scatterplots
+schools_nona <- filter(schools, !is.na(GradRate) & !is.na(NetPrice))
+cor.test(schools_nona$NumStudents, schools_nona$LGBTClubs) # r = 0.59; p < 0.01
+cor.test(schools_nona$NetPrice, schools_nona$LGBTClubs) # r = 0.04; p = 0.74
+cor.test(schools_nona$PctMen, schools_nona$LGBTClubs) # r = -0.16; p = 0.15
+cor.test(schools_nona$PctWhite, schools_nona$LGBTClubs) # r = -0.06; p = 0.57
+cor.test(schools_nona$GradRate, schools_nona$LGBTClubs) # r = 0.50; p < 0.01
+cor.test(schools_nona$TotalClubs, schools_nona$LGBTClubs) # r = 0.76; p < 0.01
+rm(schools_nona)
+
 # modify data for boxplots
 schools <- mutate(schools,
                   MARegionFac = factor(MARegion, 
@@ -74,6 +84,18 @@ schools <- mutate(schools,
                                       labels = c("Campus Housing", "No Campus Housing"),
                                       ordered = FALSE))
 
+# run tests for boxplots
+region_anova <- aov(LGBTClubs ~ MARegionFac, data = schools)
+summary(region_anova) # p = 0.621
+setting_anova <- aov(LGBTClubs ~ SettingFac, data = schools)
+summary(setting_anova) # p = 0.108
+graduate_anova <- aov(LGBTClubs ~ GraduateFac, data = schools)
+summary(graduate_anova) # p = 0.140
+t.test(LGBTClubs ~ PublicFac, data = schools) # p = 0.388
+t.test(LGBTClubs ~ CommunityFac, data = schools) # p = 0.001
+t.test(LGBTClubs ~ ChristianFac, data = schools) # p = 0.284
+t.test(LGBTClubs ~ HousingFac, data = schools) # p = 0.00004
+
 # process data for text analysis
 lgbtorgs_txt <- filter(lgbtorgs, ClubMission != "NA")
 lgbtorgs_txt$ClubID <- seq(1:nrow(lgbtorgs_txt))
@@ -81,6 +103,28 @@ mission_corpus <- corpus(lgbtorgs_txt, docid_field = "ClubID", text_field = "Clu
 mission_tokens <- tokens(mission_corpus, remove_punct = T, remove_numbers = T)
 mission_dfm <- dfm(mission_tokens) |> dfm_remove(c(stopwords('english'), "+"))
 
+# modify school data for table
+schools_table <- rename(schools,
+                        `Region of MA` = MARegion,
+                        `Campus Setting` = Setting,
+                        `Community College` = Community,
+                        `Number of Students` = NumStudents,
+                        `Average Net Price` = NetPrice,
+                        `On-Campus Housing` = Housing,
+                        `Percent Male Students` = PctMen,
+                        `Percent White Students` = PctWhite,
+                        `Graduation Rate` = GradRate,
+                        `Total Clubs` = TotalClubs,
+                        `LGBT Clubs` = LGBTClubs)
+schools_table <- select(schools_table, Name:`LGBT Clubs`)
+
+# modify organization data for table
+orgs_table <- rename(lgbtorgs,
+                     `School Name` = SchoolName,
+                     `Club Name` = ClubName,
+                     `Club Specific Population` = ClubPopn,
+                     `Club General Population` = ClubGenPopn,
+                     `Club Mission` = ClubMission)
 
 # -- BUILD APP -- #
 # define UI
@@ -92,7 +136,7 @@ ui <- fluidPage(
     tabPanel("Overview",
              card(p("Have you ever wondered what kinds of LGBT student organizations
                   exist at colleges and universities across Massachusetts? What about
-                  whether a particular college is more or less likely to have at least
+                  whether a particular school in MA is more or less likely to have at least
                   one LGBT student organization depending on certain school characteristics?
                   If so, you're in the right place!"),
                   p("This dashboard contains information about 92 higher education 
@@ -101,26 +145,21 @@ ui <- fluidPage(
                   schools was collected via the American Council on Education's (ACE) Carnegie 
                   Classification of Institutions of Higher Education, Niche, College Board, 
                   and the U.S. National Center for Education Statistics (NCES) College Navigator. 
-                  Data about the student organizations were collected by visiting each school's 
+                  Data about the student organizations was collected by visiting each school's 
                   individual website, and thus only contains publicly accessible information."),
                   p("For the main takeaways from this data, check out the information below!
-                  If you're curious about how the number of LGBT student organizations per
-                  school is related to the Massachusetts county the school is in, check out
-                  the 'Map' tab for a visual representation of different metrics across the.
-                  state. If you'd like to evaluate the relationship between a numeric 
-                  attribute of a school and the number of LGBT student organizations schools 
-                  have, head over to the 'College Scatterplots' tab. If you're interested in
-                  the relationship between a categorical attribute of a school and the
-                  number of LGBT student organizations schools have, the 'College Boxplots'
-                  will be a good destination! If you're wondering what the LGBT student
-                  organizations have in common in terms of their missions, regardless of
-                  which school they're hosted at, check out the 'Organization Wordcloud'
-                  tab! Lastly, if you want to access the raw data about the schools and/or
-                  the LGBT student organizations to learn more about a specific school or
-                  organization, feel free to peruse the 'College Data' and 'Organization
-                  Data' tabs for the ability to search and filter as you please!"),
-                  p("Without further ado, here's what you should know about the state of LGBT
-                  student organizations at higher education institutes in Massachusetts!")),
+                  Otherwise, visit any and all of the following tabs:"),
+                  p("Massachusetts Map: to see how the number of LGBT student organizations is
+                    related to the county their host schools are located in;"),
+                  p("College Scatterplots: to evaluate the relationship between a numeric
+                    attribute of schools and the number of LGBT student organizations they have;"),
+                  p("College Boxplots: to evaluate the relationship between a categorical
+                    attribute of schools and the number of LGBT student organizations they have;"),
+                  p("Organization Wordcloud: to see what some of the most common words from these
+                    LGBT student organizations' mission statements are;"),
+                  p("College Data: to access the raw data about the schools;"),
+                  p("Organization Data: to access the raw data about the LGBT student 
+                     organizations.")),
              layout_columns(
                value_box(title = "Total LGBT Student Organizations",
                          "132", 
@@ -131,7 +170,7 @@ ui <- fluidPage(
                          theme = "bg-gradient-indigo-purple"),
                value_box(title = "Average LGBT Student Organizations",
                          "1.43",
-                         "Across 92 schools in MA",
+                         "Per school in MA",
                          theme = "bg-gradient-indigo-purple")
              ),
              layout_columns(
@@ -142,21 +181,16 @@ ui <- fluidPage(
                       clubs."),
                     p("3. Higher Graduation Rates: Schools where more full-time undergraduate 
                       students graduate tend to have more LGBT student clubs."),
-                    p("Note: According to multiple linear regression models, when also controlling for: 
-                       school being public or private, 
-                       school being community college or not,
-                       school location in MA, 
-                       campus setting, 
-                       presence of graduate students, 
-                       average net price,
-                       school being Christian or not,
-                       percent of male students,
-                       percent of white students, and
-                       school having on-campus housing or not")),
-               card(card_header("Types of LGBT Student Organizations"), 
+                    p("4. On-Campus Housing: Schools that have on-campus housing tend to have more
+                      LGBT student clubs."),
+                    p("5. Non-Community Colleges: Schools that aren't community colleges tend to 
+                      have more LGBT student clubs.")),
+               card(card_header("Types of LGBT Student Organizations."), 
                     tableOutput("orgTypeTable"))
              ),
-             card(p("Dashboard created by Maura Anish in May 2025. Contact at: mbanish@umass.edu."))
+             card(p("Dashboard created by Maura Anish in May 2025 in the Data Analytics and 
+                    Computational Social Science Master's Program at the University of Massachusetts
+                    Amherst. Contact me at mbanish@umass.edu with any questions."))
     ),
     
     # Map of MA
@@ -335,7 +369,8 @@ server <- function(input, output) {
     general increases the likelihood of a school having more LGBT student organizations. The
     data regarding the total number of student organizations at a school was manually
     collected by visiting each school's website. This information is assumed to be accurate
-    as of 2025, but organizations which are currently inactive may be included as well."
+    as of 2025, but organizations which are currently inactive may be included in the total
+    counts as well."
   )})
   output$splotdesc <- renderText({splottxt()})
   
@@ -365,36 +400,49 @@ server <- function(input, output) {
     "Region of MA" = "There are 17 schools in Western MA, 11 schools in Central MA, 46 schools
     in Northeastern MA, and 18 schools in Southeastern MA. While all regions share the same
     median number of LGBT student organizations (1 organization), the West and Central MA
-    regions tend to have more schools with more than 1 LGBT student organization.",
+    regions tend to have more schools with more than 1 LGBT student organization. There is no
+    statistically significant difference in the number of LGBT student organizations based
+    on Massachusetts region alone at the 0.05 significance level, however.",
     "Campus Setting" = "There are 5 schools in a rural setting, 35 schools in a suburban
     setting, 3 schools in a town, 10 schools in a small city, 16 schools in a medium-sized
     city, and 23 schools in a large city. Schools in every setting except for small cities
     have a median of 1 LGBT student organization. Schools located in a small city are more
-    likely to have more than 1 LGBT student organization. The data regarding the setting of
-    each school was retrieved from the U.S. NCES and is accurate as of 2025.",
+    likely to have more than 1 LGBT student organization. There is no statistically significant
+    difference in the number of LGBT student organizations based on the campus setting alone at
+    the 0.05 significance level, however. The data regarding the setting of each school was
+    retrieved from the U.S. NCES and is accurate as of 2025.",
     "Student Body Makeup" = "There are 27 schools with exclusively undergraduate students,
     60 schools with both undergraduate and graduate students, and only 5 schools with 
     exclusively graduate students. Regardless of the student body makeup, the median number
     of LGBT student organizations is 1. However, schools with some undergraduate students
     and some graduate students are more likely to have more than 1 LGBT student organization.
-    The data regarding the student body makeup of each school was retrieved from the ACE and 
-    is accurate as of 2025.",
+    There is no statistically significant difference in the number of LGBT student organizations
+    based on the student body makeup alone at the 0.05 significance level. The data regarding 
+    the student body makeup of each school was retrieved from the ACE and is accurate as of 2025.",
     "Public or Private" = "There are 29 public schools and 63 private schools. Both types of
     school have a median of 1 LGBT student organization, but private schools are more likely
-    to have more than 1 LGBT student organization.",
+    to have more than 1 LGBT student organization. There is no statistically significant
+    difference in the number of LGBT student organizations based on a school's public status 
+    alone at the 0.05 significance level, however.",
     "Community or Not" = "There are 15 community colleges and 77 non-community colleges.
     Both types of school have a median of 1 LGBT student organization, but non-community
-    colleges are more likely to have more than 1 LGBT student organization.",
+    colleges are more likely to have more than 1 LGBT student organization. There is a 
+    statistically significant difference in the number of LGBT student organizations based
+    on whether a school is a community college alone at the 0.05 significance level.",
     "Christian or Not" = "There are 15 Christian colleges and 77 non-Christian colleges.
     Both types of school have a median of 1 LGBT student organization, but non-Christian
-    colleges are much more likely to have more than 1 LGBT student organization. The data
-    regarding whether a school is Christian or not was retrieved from NICHE and does not
-    specify the year of collection.",
+    colleges are much more likely to have more than 1 LGBT student organization. There is
+    no statistically significant difference in the number of LGBT student organizations
+    based on a school's religious status alone at the 0.05 significance level, however. The
+    data regarding whether a school is Christian or not was retrieved from NICHE and does 
+    not specify the year of collection.",
     "Campus Housing or Not" = "There are 65 schools which offer on-campus housing and 27
     schools which do not offer on-campus housing. Both types of school have a median of 1
     LGBT student organization, but schools which offer campus housing are more likely to
-    have more than 1 LGBT student organization. The data regarding whether a school has
-    on-campus housing or not was retrieved from the U.S. NCES and is accurate as of 2025."
+    have more than 1 LGBT student organization. There is a statistically significant difference
+    in the number of LGBT student organizations based on whether a school has campus housing
+    alone at the 0.05 significance level. The data regarding whether a school has on-campus
+    housing or not was retrieved from the U.S. NCES and is accurate as of 2025."
     )})
   output$bplotdesc <- renderText({bplottxt()})
   
@@ -406,10 +454,10 @@ server <- function(input, output) {
   })
   
   # College Data
-  output$school_table <- renderDataTable({datatable(schools, filter = "top")}) 
+  output$school_table <- renderDataTable({datatable(schools_table, filter = "top")}) 
   
   # Organization Data
-  output$org_table <- renderDataTable({datatable(lgbtorgs, filter = "top")}) 
+  output$org_table <- renderDataTable({datatable(orgs_table, filter = "top")}) 
 }
 
 # run the app
